@@ -15,7 +15,7 @@ jobs:
     - name: ⏳ Checkout Source Code
       uses: actions/checkout@v4
       with:
-        ref: main
+        ref: master          # kiddin9/openwrt 使用 master 分支
         submodules: recursive
         fetch-depth: 0
       continue-on-error: true
@@ -63,7 +63,6 @@ jobs:
         echo "CONFIG_PACKAGE_luci-app-passwall=y" >> .config
         echo "CONFIG_PACKAGE_luci-i18n-passwall-zh-cn=y" >> .config
         echo "CONFIG_PACKAGE_v2ray-core=y" >> .config
-        # 注意：暂时不启用 trojan-go / chinadns-ng 首次编译
 
         # === USB & Storage Support ===
         echo "CONFIG_PACKAGE_kmod-usb3=y" >> .config
