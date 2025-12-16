@@ -1,22 +1,26 @@
-name: Build kwt for JDCloud RE-CS-05 with Docker & PassWall
+name: Build kwt for JDCloud RE-CS-05 (Minimal + PassWall)
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # 手动触发
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 200
+    timeout-minutes: 200  # 最多 3 小时 20 分钟
 
     steps:
-    - name: Checkout with retry
+    - name: 💾 Check Disk Space (Before)
+      run: df -h
+
+    - name: ⏳ Checkout Source Code
       uses: actions/checkout@v4
       with:
+        ref: main
         submodules: recursive
         fetch-depth: 0
       continue-on-error: true
 
-    - name: Retry checkout if failed
+    - name: 🔁 Retry Checkout on Failure
       if: failure()
       run: |
         git submodule sync --recursive
@@ -34,47 +38,65 @@ jobs:
     - name: 🚀 Setup ccache
       uses: hendrikmuhs/ccache-action@v1.2
       with:
-        key: jdcloud-re-cs-05-docker-passwall
+        key: jdcloud-re-cs-05-minimal-passwall
 
     - name: 🌱 Update & Install Feeds
       run: |
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: 🛠 Generate .config for RE-CS-05 with Plugins
+    - name: 🛠 Generate .config (Optimized for RE-CS-05)
       run: |
         rm -f .config
 
+        # === Target Platform ===
         echo "CONFIG_TARGET_mediatek=y" >> .config
         echo "CONFIG_TARGET_mediatek_filogic=y" >> .config
         echo "CONFIG_TARGET_mediatek_filogic_DEVICE_jingdong_re-cs-05=y" >> .config
 
+        # === LuCI Web Interface ===
         echo "CONFIG_PACKAGE_luci=y" >> .config
         echo "CONFIG_PACKAGE_luci-theme-argon=y" >> .config
+        echo "CONFIG_PACKAGE_luci-app-firewall=y" >> .config
 
+        # === PassWall (Minimal Core) ===
         echo "CONFIG_PACKAGE_luci-app-passwall=y" >> .config
         echo "CONFIG_PACKAGE_luci-i18n-passwall-zh-cn=y" >> .config
         echo "CONFIG_PACKAGE_v2ray-core=y" >> .config
+        # 注意：暂时不启用 trojan-go / chinadns-ng 首次编译
 
-        echo "CONFIG_PACKAGE_luci-app-dockerman=y" >> .config
-        echo "CONFIG_PACKAGE_docker=y" >> .config
-        echo "CONFIG_PACKAGE_dockerd=y" >> .config
-
+        # === USB & Storage Support ===
         echo "CONFIG_PACKAGE_kmod-usb3=y" >> .config
         echo "CONFIG_PACKAGE_kmod-usb-storage=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-scsi-core=y" >> .config
         echo "CONFIG_PACKAGE_block-mount=y" >> .config
         echo "CONFIG_PACKAGE_kmod-fs-ext4=y" >> .config
+        echo "CONFIG_PACKAGE_kmod-fs-vfat=y" >> .config
 
+        # === Essential Tools ===
+        echo "CONFIG_PACKAGE_htop=y" >> .config
+        echo "CONFIG_PACKAGE_curl=y" >> .config
+        echo "CONFIG_PACKAGE_wget-ssl=y" >> .config
+
+        # === CRITICAL: Disable GDB to save RAM & time ===
+        echo "CONFIG_GDB=n" >> .config
+        echo "CONFIG_PACKAGE_gdb=n" >> .config
+
+        # Generate final config
         make defconfig
 
-    - name: 🏗️ Start Compilation
+    - name: 🏗️ Compile Firmware (-j2 to avoid OOM)
       run: |
-        make -j$(nproc) V=s
+        echo "Starting compilation with -j2..."
+        make -j2 V=s
+
+    - name: 💾 Check Disk Space (After)
+      run: df -h
 
     - name: 📤 Upload Firmware Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: kwt-jdcloud-re-cs-05-docker-passwall
+        name: kwt-jdcloud-re-cs-05-passwall-minimal
         path: |
           bin/targets/mediatek/filogic/*jingdong-re-cs-05-squashfs-sysupgrade.bin
           bin/targets/mediatek/filogic/sha256sums
