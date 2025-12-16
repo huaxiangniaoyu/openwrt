@@ -1,0 +1,100 @@
+name: Build kwt for JDCloud RE-CS-05 with Docker & PassWall
+
+on:
+  workflow_dispatch:  # 允许手动点击运行
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 200  # 最多 3 小时 20 分钟
+
+    steps:
+      - name: ⏳ Checkout Source Code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: 📦 Install System Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential ccache ecj fastjar file g++ gawk \
+            gettext git java-propose-classpath libelf-dev libncurses5-dev \
+            libncursesw5-dev libssl-dev python3-distutils rsync subversion \
+            swig time unzip wget python3 python3-pip python3-ply \
+            haveged lrzsz libc6-dev libstdc++6
+
+      - name: 🚀 Setup ccache (Speed up future builds)
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: jdcloud-re-cs-05-docker-passwall
+
+      - name: 🌱 Update & Install Feeds
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: 🛠 Generate .config for RE-CS-05 with Plugins
+        run: |
+          rm -f .config
+
+          # === 基础平台 ===
+          echo "CONFIG_TARGET_mediatek=y" >> .config
+          echo "CONFIG_TARGET_mediatek_filogic=y" >> .config
+          echo "CONFIG_TARGET_mediatek_filogic_DEVICE_jingdong_re-cs-05=y" >> .config
+
+          # === LuCI Web 界面 ===
+          echo "CONFIG_PACKAGE_luci=y" >> .config
+          echo "CONFIG_PACKAGE_luci-base=y" >> .config
+          echo "CONFIG_PACKAGE_luci-mod-system=y" >> .config
+          echo "CONFIG_PACKAGE_luci-mod-network=y" >> .config
+          echo "CONFIG_PACKAGE_luci-theme-argon=y" >> .config
+          echo "CONFIG_PACKAGE_luci-app-firewall=y" >> .config
+
+          # === PassWall 科学上网 ===
+          echo "CONFIG_PACKAGE_luci-app-passwall=y" >> .config
+          echo "CONFIG_PACKAGE_luci-i18n-passwall-zh-cn=y" >> .config
+          echo "CONFIG_PACKAGE_chinadns-ng=y" >> .config
+          echo "CONFIG_PACKAGE_v2ray-core=y" >> .config
+          echo "CONFIG_PACKAGE_trojan-go=y" >> .config
+
+          # === Docker (Dockerman) ===
+          echo "CONFIG_PACKAGE_luci-app-dockerman=y" >> .config
+          echo "CONFIG_PACKAGE_docker=y" >> .config
+          echo "CONFIG_PACKAGE_dockerd=y" >> .config
+          echo "CONFIG_PACKAGE_containerd=y" >> .config
+
+          # === AdGuard Home 广告过滤 ===
+          echo "CONFIG_PACKAGE_luci-app-adguardhome=y" >> .config
+          echo "CONFIG_PACKAGE_adguardhome=y" >> .config
+
+          # === USB & 文件系统支持（Docker 需要外接存储）===
+          echo "CONFIG_PACKAGE_kmod-usb3=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-usb-storage=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-scsi-core=y" >> .config
+          echo "CONFIG_PACKAGE_block-mount=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-fs-ext4=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-fs-vfat=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-nls-utf8=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-nls-cp437=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-fs-ntfs3=y" >> .config  # NTFS 读写支持
+
+          # === 其他实用工具 ===
+          echo "CONFIG_PACKAGE_htop=y" >> .config
+          echo "CONFIG_PACKAGE_iperf3=y" >> .config
+          echo "CONFIG_PACKAGE_curl=y" >> .config
+          echo "CONFIG_PACKAGE_wget-ssl=y" >> .config
+
+          # 生成完整配置
+          make defconfig
+
+      - name: 🏗️ Start Compilation (耐心等待 1.5~2 小时)
+        run: |
+          make -j$(nproc) V=s
+
+      - name: 📤 Upload Firmware Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kwt-jdcloud-re-cs-05-docker-passwall
+          path: |
+            bin/targets/mediatek/filogic/*jingdong-re-cs-05-squashfs-sysupgrade.bin
+            bin/targets/mediatek/filogic/sha256sums
